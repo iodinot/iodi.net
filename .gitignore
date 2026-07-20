@@ -47,6 +47,7 @@ node_modules/
 ### Custom ###
 .spec-workflow/
 .playwright-cli/
+.wrangler/
 old_blog
 ignore.*
 bunfig.toml
