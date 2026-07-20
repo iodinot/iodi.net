@@ -171,7 +171,7 @@ export const ThemeConfigSchema = () =>
           .describe('Content to show for external links'),
         /** Properties for the external links element */
         properties: z
-          .record(z.string())
+          .record(z.string(), z.string())
           .optional()
           .describe('Properties for the external links element')
       }),

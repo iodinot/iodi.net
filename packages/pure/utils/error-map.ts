@@ -3,7 +3,7 @@ import type { z } from 'astro/zod'
 
 type ParseResult<T> =
   | { success: true; data: T }
-  | { success: false; error: { issues: Array<{ message: string }> } }
+  | { success: false; error: { issues: Array<{ message: string; path?: PropertyKey[] }> } }
 
 /** Parse input with a Zod schema and surface validation failures as Astro errors. */
 export function parseWithFriendlyErrors<T extends z.ZodType>(
@@ -25,7 +25,10 @@ export async function parseAsyncWithFriendlyErrors<T extends z.ZodType>(
 
 function processParsedData<T>(parsedData: ParseResult<T>, message: string): T {
   if (!parsedData.success) {
-    throw new AstroError(message, parsedData.error.issues.map((issue) => issue.message).join('\n'))
+    const details = parsedData.error.issues
+      .map((issue) => `${issue.path?.join('.') || 'config'}: ${issue.message}`)
+      .join('\n')
+    throw new AstroError(message, details)
   }
   return parsedData.data
 }

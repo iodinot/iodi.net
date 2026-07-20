@@ -43,6 +43,7 @@
     "hast-util-select": "^6.0.4",
     "node-html-parser": "^7.0.1",
     "pagefind": "^1.4.0",
+    "rehype": "^13.0.2",
     "unocss": "^66.5.4"
   }
 }
