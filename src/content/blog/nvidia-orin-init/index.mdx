@@ -1,0 +1,411 @@
+---
+title: "NVIDIA Orin NX/Nano 初始化"
+description: "Orin NX/Nano 的系统安装、配网及 SSH 初步配置"
+publishDate: 2026-03-17
+tags: ["NVIDIA", "Orin", "ROS2", "Docker", "Ubuntu"]
+heroImage:
+  src: "./thumbnail.png"
+  alt: "NVIDIA Orin NX/Nano Hero Image"
+language: "zh-cn"
+---
+
+import { Aside, Tabs, TabItem } from 'astro-pure/user'
+
+## 前言
+不常用的流程及指令容易遗忘，而有些流程是低频却必要的，比如新设备的初始化。本文记录 NVIDIA Orin NX/Nano 系统的安装以及初步配置流程以便查阅。
+
+## 一、 WSL2配置
+仅供 Windows 用户参考，原生 Ubuntu 用户可直接跳到[系统安装](#二-系统安装)
+在 `~/.wslconfig` 下加入如下配置：
+
+```ini
+[wsl2]
+# 刷机需要与设备处于同一物理局域网，所以使用镜像网络。
+networkingMode=mirrored
+
+# 可选：仅在开启代理软件的 TUN 模式（如 Clash/Mihomo 虚拟网卡），且导致 WSL2 镜像网络启动异常
+# （例如 `ip a` 只有 `lo`）时再配置。将 TUN 网卡加入黑名单后，WSL2 仍可正常克隆物理网卡。
+# 这里的 `Mihomo` 是你的 TUN 网卡名称。
+ignoredNetworkAdapters=Mihomo
+
+# 关闭自动代理，避免 WSL 内部环境变量与宿主机 TUN 路由互相干扰。
+autoProxy=false
+```
+
+## 二、 系统安装
+### 2.1 GUI 安装
+SDK Manager下载：[NVIDIA SDK Manager](https://developer.nvidia.com/drive/sdk-manager)
+之后基本就是傻瓜式操作了，详细教程见 [官方文档](https://docs.nvidia.com/sdk-manager/install-with-sdkm-jetson/index.html)
+
+### 2.2 CLI安装
+对 **Jetson Orin NX / Nano** 而言，NVIDIA 官方当前推荐的命令行刷机路线是 **`initrd flashing`**。依据见 [Flashing Support](https://docs.nvidia.com/jetson/archives/r36.4.4/DeveloperGuide/SD/FlashingSupport.html) 与 [Quick Start](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/IN/QuickStart.html)。
+
+#### 2.2.1 安装前提
+
+1.  **先下载两个官方包**：BSP release package 和 sample rootfs，下载入口在 [Jetson Linux 下载页](https://developer.nvidia.com/embedded/jetson-linux-archive)。
+2.  **Orin NX / Nano 默认记 `initrd flash`**而不是 `flash.sh`。
+
+
+<Aside type="note" title="为什么这里强调 initrd">
+官方文档在 “Using flash.sh with Orin NX and Nano” 一节里明确写到，Orin NX / Nano 的官方刷写方法是 `initrd flashing`。`flash.sh` 不是完全不能用，但官方定位更偏开发调试和某些特定场景，不是这里这篇“初始化”想推荐的默认路线。
+</Aside>
+
+#### 2.2.2 环境准备
+官方准备步骤如下：
+
+```bash
+# 解压 Jetson Linux BSP 包
+tar xf ${L4T_RELEASE_PACKAGE}
+# 将 sample rootfs 解压到 Linux_for_Tegra/rootfs
+sudo tar xpf ${SAMPLE_FS_PACKAGE} -C Linux_for_Tegra/rootfs/
+cd Linux_for_Tegra/
+# 安装刷机依赖
+sudo ./tools/l4t_flash_prerequisites.sh
+# 应用 NVIDIA 提供的二进制组件
+sudo ./apply_binaries.sh
+```
+
+这里的 `${L4T_RELEASE_PACKAGE}` 和 `${SAMPLE_FS_PACKAGE}` 指的就是刚下载的那两个官方包。  
+顺序是：**先解包 rootfs，再跑前置依赖，最后 `apply_binaries.sh`。**
+
+#### 2.2.3 Force Recovery Mode
+对于 **Jetson Orin Nano Developer Kit**，Quick Start 给出的进入 Force Recovery Mode 的方式如下：
+
+1.  断开电源，确保开发板处于关机状态。
+2.  在 12-pin button header 上短接 `REC` 和 `GND`。
+3.  重新接上电源。
+
+可以在主机上直接执行：
+
+```bash
+# 主机侧确认 Recovery Mode 识别结果
+lsusb
+```
+
+如果能看到类似下面这一行，才说明板子确实进了恢复模式：
+
+```text
+Bus 001 Device 025: ID 0955:7523 NVIDIA Corp. APX
+```
+
+
+#### 2.2.4 命令行刷写
+Quick Start 给出的 Jetson Orin Nano Developer Kit 官方示例如下：
+
+<Tabs>
+  <TabItem label="NVMe（推荐）">
+    ```bash
+    sudo ./tools/kernel_flash/l4t_initrd_flash.sh --external-device nvme0n1p1 \
+      -c tools/kernel_flash/flash_l4t_t234_nvme.xml \
+      -p "-c bootloader/generic/cfg/flash_t234_qspi.xml" \
+      --showlogs --network usb0 jetson-orin-nano-devkit internal
+    ```
+  </TabItem>
+  <TabItem label="USB">
+    ```bash
+    sudo ./tools/kernel_flash/l4t_initrd_flash.sh --external-device sda1 \
+      -c tools/kernel_flash/flash_l4t_t234_nvme.xml \
+      -p "-c bootloader/generic/cfg/flash_t234_qspi.xml" \
+      --showlogs --network usb0 jetson-orin-nano-devkit internal
+    ```
+  </TabItem>
+  <TabItem label="SD 卡">
+    ```bash
+    sudo ./tools/kernel_flash/l4t_initrd_flash.sh --external-device mmcblk0p1 \
+      -c tools/kernel_flash/flash_l4t_t234_nvme.xml \
+      -p "-c bootloader/generic/cfg/flash_t234_qspi.xml" \
+      --showlogs --network usb0 jetson-orin-nano-devkit internal
+    ```
+  </TabItem>
+</Tabs>
+
+其中：
+
+*   `--external-device nvme0n1p1`：目标系统写入的外部介质分区。
+*   `-c tools/kernel_flash/flash_l4t_t234_nvme.xml`：外部介质布局配置文件。
+*   `-p "-c bootloader/generic/cfg/flash_t234_qspi.xml"`：QSPI 启动介质配置。
+*   `--showlogs`：输出详细刷机日志。
+*   `--network usb0`：通过 USB 虚拟网卡完成刷机过程中的网络通信。
+*   `jetson-orin-nano-devkit internal`：目标板型与刷写模式参数。
+
+
+`--network usb0` 不能漏。Flashing Support 提到，`initrd flash` 过程中工具会通过 `IPv6` 地址空间 `fc00:1:1::/48` 使用 NFS 和 SSH。
+
+#### 2.2.5 启动介质确认
+**第一次启动时，要在 UEFI 菜单里选对刚刷进去的启动介质**。  
+比如刷的是 NVMe，启动项也应指向 NVMe。
+
+#### 2.2.6 参考资料
+后面如果又忘了细节，优先翻这几个官方页面和官方论坛贴：
+
+*   [NVIDIA Jetson Linux Quick Start](https://docs.nvidia.com/jetson/archives/r36.4/DeveloperGuide/IN/QuickStart.html)
+*   [NVIDIA Flashing Support](https://docs.nvidia.com/jetson/archives/r36.4.4/DeveloperGuide/SD/FlashingSupport.html)
+*   [NVIDIA Developer Forums: Recovery Mode for Jetson Orin Nano](https://forums.developer.nvidia.com/t/recovery-mode-for-jetson-orin-nano-0955-7523-p3767-0003-with-8gb/318754)
+*   [NVIDIA Developer Forums: USB-C / Recovery 识别问题讨论](https://forums.developer.nvidia.com/t/failed-to-connect-jetson-orin-nano-dev-kit-to-host-via-usb-c-after-flashing-jetpack-6-2/323030)
+
+## 三、初次配网
+### 3.1 Headless下无路由器后台权限获取Nano局域网IP
+适用范围：板卡已连接工作机同一局域网，但没有显示器、没有路由器后台权限。
+
+```powershell
+# 1. 查看本机 IPv4，确认当前网段（本文示例为 192.168.1.0/24）
+ipconfig
+
+# 2. 只扫描开放 22 端口的主机
+nmap -p 22 --open 192.168.1.0/24
+
+# 3. 根据扫描结果尝试 SSH，确认目标地址
+ssh nvidia@192.168.1.20
+```
+
+其中：
+*   `nmap -p 22 --open` 用于只保留开放 SSH 端口的主机，候选更少。
+*   Nano 安装系统后 `sshd` 默认开启，因此可先用 `22` 端口做一轮筛选。
+*   本机实测在 `192.168.1.0/24` 下可正常筛出 `192.168.1.20`，其 MAC 厂商会显示为 `Nvidia`。
+*   拿到候选地址后，再用 `ssh nvidia@<ip>` 做最终确认。
+
+<Aside type="tip" title="Windows 下先安装 Nmap">
+若主机还没有 `nmap`，可先安装 `Nmap` 与 `Npcap`，下载入口：
+
+* [Nmap Download](https://nmap.org/download.html)
+* [Npcap](https://npcap.com/)
+
+本文写作时，本机使用 `Nmap 7.98 + Npcap 1.87`，`nmap -sn 192.168.1.0/24` 可正常执行。
+</Aside>
+
+### 3.2 配置 mDNS 访问
+
+具体配置过程见[《NVIDIA Orin 环境配置》](/blog/nvidia-orin-environment-setup#22-抛弃静态-ip配置-mdns-访问)的对应章节，这里不再重复展开。
+
+## 四、SSH 扫盲
+<Aside type="note" title="SSH 是什么">
+`SSH`（Secure Shell）是一种加密的远程登录与远程执行协议。对 Orin Nano 这类设备而言，它通常就是默认的远程控制入口：登录终端、执行命令、传文件、做端口转发，基本都围绕它展开。官方参考可见 [OpenSSH Manual Pages](https://www.openssh.com/manual.html)。
+</Aside>
+
+进入远程开发阶段后，`SSH` 基本就是你和 Orin Nano 交互的默认入口。无论是工业研发团队，还是高校计算平台，成熟做法都相当一致：以 `SSH` 作为默认控制面，以公钥认证作为默认鉴权手段，再用主机别名和端口转发把日常开发流程固化下来。
+
+### 4.1 第一次连接
+
+如果这台 Nano 还没配好 `mDNS`，就先用刚扫出来的 IP 登录：
+
+```bash
+ssh nvidia@192.168.1.20
+```
+
+第一次连接时，终端通常会提示你确认主机指纹，输入 `yes` 即可。登录成功后，建议先记住下面几条最常用的确认命令：
+
+```bash
+hostname      # 当前主机名
+hostname -I   # 当前 IP
+whoami        # 当前登录用户
+```
+
+### 4.2 用 `~/.ssh/config` 给设备起别名
+
+如果每次都手动输入 `ssh nvidia@192.168.x.x`，很快就会烦。更实用的做法是在开发机的 `~/.ssh/config` 里给每台设备起一个固定别名。
+
+<Tabs>
+  <TabItem label="完整示例">
+    ```text
+    Host nrc17
+        HostName nrc17.local               # 设备地址；默认值是命令行里输入的主机名，也可以先写成 192.168.1.20
+        User nvidia                        # 登录用户；默认值通常是当前本机用户名
+        Port 22                            # SSH 端口；默认值是 22
+        IdentityFile ~/.ssh/id_ed25519     # 指定使用的私钥；默认会依次尝试 ~/.ssh/id_rsa、id_ecdsa、id_ecdsa_sk、id_ed25519、id_ed25519_sk
+        IdentitiesOnly yes                 # 只使用上面这把密钥；默认值是 no
+        PubkeyAuthentication yes           # 明确启用公钥认证；默认值是 yes
+        ConnectTimeout 5                   # 连接超时；默认未显式设置时使用系统 TCP 超时
+        ServerAliveInterval 30             # 每 30 秒发一次保活；默认值是 0，表示不主动发送保活
+        ServerAliveCountMax 3              # 连续 3 次保活无响应后断开；默认值是 3
+        LocalForward 8765 localhost:8765   # 可选：把 Nano 的 8765 端口转到本机；默认不启用任何本地端口转发
+    ```
+  </TabItem>
+  <TabItem label="最简块">
+    ```text
+    Host nrc17
+        HostName nrc17.local
+        User nvidia
+    ```
+  </TabItem>
+  <TabItem label="跳板机">
+    ```text
+    Host jump-lab
+        HostName 10.0.0.10                 # 跳板机地址
+        User labuser                       # 跳板机用户
+        IdentityFile ~/.ssh/id_ed25519     # 登录跳板机使用的私钥
+
+    Host nrc17-via-jump
+        HostName 192.168.1.20              # Nano 在内网中的地址
+        User nvidia                        # Nano 登录用户
+        IdentityFile ~/.ssh/id_ed25519     # 登录 Nano 使用的私钥
+        IdentitiesOnly yes                 # 只使用指定私钥
+        ProxyJump jump-lab                 # 先跳到 jump-lab，再转发到目标主机
+        ConnectTimeout 5                   # 避免跳板链路异常时卡太久
+    ```
+  </TabItem>
+</Tabs>
+
+其中 `Host` 后面的名字是你自己定义的别名。这样以后直接执行：
+
+```bash
+ssh nrc17
+```
+
+即可登录对应设备。  
+如果跳板链路不止一层，`ProxyJump` 也支持继续写成 `jump-a,jump-b` 这种链式形式。
+
+### 4.3 免密登录
+
+工程上更推荐把公钥提前配好，避免每次输密码：
+
+```bash
+# 本机生成 ed25519 密钥；如果已有 ~/.ssh/id_ed25519，可跳过
+ssh-keygen -t ed25519
+
+# 将本机公钥复制到目标设备
+ssh-copy-id nrc17
+
+# 验证免密是否生效
+ssh nrc17
+```
+
+这一步在多机调试、频繁重连、脚本化部署时尤其省事。  
+
+
+### 4.4 常用的几种 SSH 命令
+
+#### 远程执行命令
+
+```bash
+# 指定私钥、连接超时和 SSH 端口；登录后在远端执行巡检命令
+ssh -i ~/.ssh/id_ed25519 -o ConnectTimeout=5 -p 22 nrc17 \
+  "hostname && hostname -I && systemctl is-active ssh"
+```
+
+常用参数：
+* `-p`：指定端口，如 `ssh -p 2222 nrc17`
+* `-i`：指定私钥文件，如 `ssh -i ~/.ssh/id_ed25519 nrc17`
+* `-L`：本地端口转发
+* `-J`：通过跳板机连接，等价于 `ProxyJump`
+* `-o`：临时指定配置项，如 `-o ConnectTimeout=5`
+
+#### 传文件
+
+```bash
+# 指定私钥、端口和压缩，将本机文件上传到 Nano
+scp -i ~/.ssh/id_ed25519 -P 22 -C ./config.yaml nrc17:~/config.yaml
+
+# 递归拉回远端目录
+scp -i ~/.ssh/id_ed25519 -P 22 -r nrc17:~/logs ./logs
+```
+
+常用参数：
+* `-P`：指定端口，注意这里是大写 `P`
+* `-i`：指定私钥文件
+* `-r`：递归复制目录
+* `-C`：启用压缩，适合弱网环境
+* `-o`：透传 SSH 配置项，如 `-o ConnectTimeout=5`
+
+#### 端口转发
+
+如果某个服务只监听在 Nano 本机回环地址上，可以用 `ssh -L` 把端口转到自己的电脑。例如 Nano 上某个 WebSocket 或 Web 服务监听在 `8765` 端口：
+
+```bash
+# 指定私钥与端口，只建立隧道、不打开 shell，并放到后台运行
+ssh -i ~/.ssh/id_ed25519 -p 22 -N -f \
+  -L 8765:localhost:8765 \
+  nrc17
+```
+
+连上后，本机访问 `localhost:8765`，实际就等于访问 Nano 的 `localhost:8765`。  
+这种方式并不局限于 `foxglove_bridge`，在 Jupyter、TensorBoard 等交互式服务上也普遍采用同样的 SSH 隧道模式。
+
+常用参数：
+* `-L [本机端口]:[远端地址]:[远端端口]`：本地端口转发
+* `-N`：只建立隧道，不执行远程命令
+* `-f`：放到后台运行，通常和 `-N` 搭配
+* `-p`：指定 SSH 端口
+* `-J`：通过跳板机建立隧道
+
+### 4.5 关于 `ForwardAgent`
+
+`ForwardAgent` 能让远端主机借用你本地 `ssh-agent` 中已经加载的密钥，在某些需要从 Nano 再访问 Git 仓库的场景里会很方便。但这一项要谨慎使用，建议只对明确受信任的主机单独开启，不要写成 `Host *` 的全局默认值。
+
+```text
+Host nrc17
+    HostName nrc17.local
+    User nvidia
+    ForwardAgent yes                   # 允许远端借用本机 ssh-agent；仅建议对受信任主机开启
+```
+
+如果你并不需要在 Nano 上继续跳转到别的 SSH 服务，那么这一项完全可以不配。
+
+## 五、常用服务与配置文件
+
+容易忘的。
+
+### 5.1 系统层
+
+#### 核心服务
+
+| 条目                   | 作用                                                                    | 最小示例                                   |
+| ---------------------- | ----------------------------------------------------------------------- | ------------------------------------------ |
+| `ssh.service`          | 远程登录入口。系统刷好以后，后续大多数终端操作都从它开始。              | `sudo systemctl enable --now ssh`          |
+| `avahi-daemon.service` | 提供 `.local` 形式的 `mDNS` 主机发现，便于在局域网内用主机名访问 Nano。 | `sudo systemctl enable --now avahi-daemon` |
+
+#### 核心配置文件
+
+| 条目                           | 作用                                                                | 最小示例                |
+| ------------------------------ | ------------------------------------------------------------------- | ----------------------- |
+| `/etc/ssh/sshd_config`         | `sshd` 的主配置文件。常改的通常是认证方式、端口与登录策略。         | `Port 22`               |
+| `/etc/avahi/avahi-daemon.conf` | `avahi-daemon` 的配置文件。和 `mDNS`、主机名发布相关。              | `publish-addresses=yes` |
+| `/etc/hostname`                | 机器主机名。配合 `mDNS` 后，常直接对应 `nrc17.local` 这种访问方式。 | `nrc17`                 |
+| `/etc/hosts`                   | 本地静态主机名解析表。改主机名或做本地别名映射时经常一起看。        | `127.0.1.1 nrc17`       |
+
+#### Ubuntu 常用配置文件
+
+| 条目                             | 作用                                                               | 最小示例                                                         |
+| -------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `/etc/apt/sources.list`          | `apt` 软件源主配置。换镜像、检查发行版源时最常看。                 | `deb http://ports.ubuntu.com/ubuntu-ports jammy main restricted` |
+| `/etc/apt/sources.list.d/*.list` | 第三方仓库配置目录。Jetson、Docker、ROS 这类额外源通常会落在这里。 | `docker.list`                                                    |
+| `/etc/netplan/*.yaml`            | Ubuntu 的网络配置文件。静态 IP、DNS、网卡名映射通常从这里改。      | `renderer: NetworkManager`                                       |
+| `/etc/fstab`                     | 开机自动挂载表。挂载 NVMe 分区、数据盘或外设时常会改。             | `UUID=xxxx /data ext4 defaults 0 2`                              |
+| `/etc/environment`               | 系统级环境变量文件。需要对所有用户生效的环境变量可以写在这里。     | `HTTP_PROXY=http://127.0.0.1:7890`                               |
+| `~/.bashrc`                      | 用户级 shell 初始化文件。别名、`PATH`、代理变量等更常写在这里。    | `export PATH=$PATH:/usr/local/bin`                               |
+
+#### 自定义自启动
+
+| 条目                            | 作用                                                                                          | 最小示例                               |
+| ------------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `/etc/systemd/system/*.service` | 自定义 `systemd` 服务单元目录。后续如果要让节点、脚本或容器开机自启，通常就在这里写服务文件。 | `ExecStart=/usr/bin/docker compose up` |
+
+#### `.service` 模板
+
+后面如果要把脚本、节点或容器做成开机自启，通常会在 `/etc/systemd/system/` 下写一个 `.service` 文件。最小模板如下：
+
+```ini
+[Unit]
+Description=My Startup Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nvidia
+WorkingDirectory=/home/nvidia
+ExecStart=/usr/bin/bash /home/nvidia/start.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+其中：
+* `After` / `Wants`：声明启动依赖，常见是等网络起来。
+* `User`：指定以哪个用户身份运行。
+* `WorkingDirectory`：脚本或程序的工作目录。
+* `ExecStart`：真正执行的命令。
+* `Restart` / `RestartSec`：异常退出后的重启策略。
+* `WantedBy=multi-user.target`：表示在常规多用户启动阶段拉起。
+

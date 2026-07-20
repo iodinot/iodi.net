@@ -1,0 +1,64 @@
+### Astro ###
+dist/
+.astro/
+.github/
+.vscode/
+.cursor/
+
+### Vercel ###
+.vercel/
+
+### Vim ###
+[._]*.un~
+
+### VisualStudioCode ###
+.vscode/*
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Code workspace files
+*.code-workspace
+
+### JetBrains ###
+.idea/
+
+### Local Env ###
+*.local
+
+### Logs ###
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+### System ###
+.DS_Store
+Thumbs.db
+
+# dependencies
+node_modules/
+
+# environment variables
+.env
+.env.production
+
+### Custom ###
+.spec-workflow/
+old_blog
+ignore.*
+bunfig.toml
+/src/content/blog/test.*
+/src/content/blog/c-pointers-and-structs/
+/src/content/blog/c-quick-start/
+/src/content/blog/css-flex-layout/
+/test/
+CONTENT_GUIDE.md
+SUMMARY.md
+.cunzhi-memory/context.md
+.cunzhi-memory/metadata.json
+.cunzhi-memory/patterns.md
+.cunzhi-memory/preferences.md
+.cunzhi-memory/rules.md
+.roo/
