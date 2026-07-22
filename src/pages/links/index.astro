@@ -3,14 +3,11 @@ import FriendList from '@/components/links/FriendList.astro'
 import PageLayout from '@/layouts/CommonPage.astro'
 import links from '../../../public/links.json'
 
-const groups = [
-  { id: 'cf-links', title: '友链' },
-  { id: 'special-links', title: '特别链接' }
-]
+const groups = [{ id: 'cf-links', title: '友链' }]
 ---
 
 <PageLayout title='友链'>
-  <p>朋友们的站点与值得偶尔逛逛的互联网入口。</p>
+  <p>朋友的站点。</p>
   {
     groups.map(({ id, title }) => {
       const list = links.friends.find((group) => group.id_name === id)
